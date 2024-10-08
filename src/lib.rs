@@ -1,4 +1,8 @@
+#![doc = include_str!("../README.md")]
+#![allow(clippy::needless_doctest_main)]
+
 use std::env;
+use std::ffi::OsStr;
 use std::io::Error;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -8,9 +12,10 @@ pub struct Config {
     path: PathBuf,
     profile: String,
     args: Vec<String>,
-    uses_toolchain_file: bool,
     cflags: String,
     cxxflags: String,
+    uses_toolchain_file: bool,
+    defined_system_name: bool,
 }
 
 impl Config {
@@ -28,12 +33,18 @@ impl Config {
         self.profile = prof.to_string();
         self
     }
-    pub fn define<S: AsRef<str>>(&mut self, key: S, val: S) -> &mut Config {
+    pub fn define<K: AsRef<OsStr>, V: AsRef<OsStr>>(&mut self, key: K, val: V) -> &mut Config {
         if key.as_ref() == "CMAKE_TOOLCHAIN_FILE" {
             self.uses_toolchain_file = true;
         }
-        self.args
-            .push(format!("-D{}={}", key.as_ref(), val.as_ref()));
+        if key.as_ref() == "CMAKE_SYSTEM_NAME" {
+            self.defined_system_name = true;
+        }
+        self.args.push(format!(
+            "-D{}={}",
+            key.as_ref().to_str().unwrap(),
+            val.as_ref().to_str().unwrap()
+        ));
         self
     }
     pub fn cflag(&mut self, flag: &str) -> &mut Config {
@@ -49,15 +60,18 @@ impl Config {
     fn uses_toolchain_file(&self) -> bool {
         self.uses_toolchain_file || env::var("CMAKE_TOOLCHAIN_FILE").is_ok()
     }
+    fn defined_system_name(&self) -> bool {
+        self.defined_system_name || env::var("CMAKE_SYSTEM_NAME").is_ok()
+    }
     pub fn try_build(&mut self) -> Result<PathBuf, Error> {
         let target = env::var("TARGET").unwrap();
         let host = env::var("HOST").unwrap();
         let dir_stem = PathBuf::from(self.path.file_stem().unwrap());
         let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR not defined!"));
         let bin_dir = out_dir.join(dir_stem.join("bin"));
-        let install_dir = out_dir.join(dir_stem.join("install"));
-        let lib_dir = out_dir.join(install_dir.join("lib"));
-        if target != host && !self.uses_toolchain_file() {
+        let lib_dir = out_dir.join(dir_stem.join("lib"));
+        if target != host && !self.uses_toolchain_file() && !self.defined_system_name() {
+            // copied from https://github.com/rust-lang/cmake-rs/blob/master/src/lib.rs#L450
             let os = env::var("CARGO_CFG_TARGET_OS").unwrap();
             let arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap();
             let (system_name, system_processor) = match (os.as_str(), arch.as_str()) {
@@ -108,9 +122,21 @@ impl Config {
         let mut cmd = Command::new("cmake");
         self.args.push(format!("-S{}", self.path.display()));
         self.args.push(format!("-B{}", bin_dir.display()));
-        self.args.push(format!("-DCMAKE_INSTALL_PREFIX={}", install_dir.display())); 
+        self.args.push(format!(
+            "-DCMAKE_ARCHIVE_OUTPUT_DIRECTORY={}",
+            lib_dir.display()
+        ));
+        self.args.push(format!(
+            "-DCMAKE_RUNTIME_OUTPUT_DIRECTORY={}",
+            lib_dir.display()
+        ));
+        self.args.push(format!(
+            "-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={}",
+            lib_dir.display()
+        ));
         if !self.profile.is_empty() {
-            self.args.push(format!("-DCMAKE_BUILD_TYPE={}", self.profile));
+            self.args
+                .push(format!("-DCMAKE_BUILD_TYPE={}", self.profile));
         }
         if !self.cflags.is_empty() {
             env::set_var("CFLAGS", &self.cflags);
@@ -138,18 +164,8 @@ impl Config {
         // println!("cargo:warning={:?} {:?}", cmd.get_program(), cmd.get_args());
         cmd.status()?;
 
-        // install
-        let mut cmd = Command::new("cmake");
-        let args = ["--install".to_string(), bin_dir.display().to_string()].to_vec();
-        cmd.args(&args);
-        // println!("cargo:warning={:?} {:?}", cmd.get_program(), cmd.get_args());
-        cmd.status()?;
-
         // help finding libs
         println!("cargo:rustc-link-search={}", lib_dir.display());
-        if target.contains("msvc") {
-            println!("cargo:rustc-link-search={}", lib_dir.join(&self.profile).display());
-        }
         Ok(lib_dir)
     }
 

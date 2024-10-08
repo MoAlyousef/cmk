@@ -2,3 +2,11 @@
 name = "cmk"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
+readme = "README.md"
+keywords = ["build-dependencies"]
+repository = "https://github.com/MoAlyousef/cmk"
+homepage = "https://github.com/MoAlyousef/cmk"
+documentation = "https://docs.rs/cmk"
+description = "A build dependency for running `cmake` to build a native library"
+categories = ["development-tools::build-utils"]
