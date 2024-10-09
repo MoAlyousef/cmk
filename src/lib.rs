@@ -69,7 +69,6 @@ impl Config {
         let dir_stem = PathBuf::from(self.path.file_stem().unwrap());
         let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR not defined!"));
         let bin_dir = out_dir.join(dir_stem.join("bin"));
-        let lib_dir = out_dir.join(dir_stem.join("lib"));
         if target != host && !self.uses_toolchain_file() && !self.defined_system_name() {
             // copied from https://github.com/rust-lang/cmake-rs/blob/master/src/lib.rs#L450
             let os = env::var("CARGO_CFG_TARGET_OS").unwrap();
@@ -123,16 +122,8 @@ impl Config {
         self.args.push(format!("-S{}", self.path.display()));
         self.args.push(format!("-B{}", bin_dir.display()));
         self.args.push(format!(
-            "-DCMAKE_ARCHIVE_OUTPUT_DIRECTORY={}",
-            lib_dir.display()
-        ));
-        self.args.push(format!(
-            "-DCMAKE_RUNTIME_OUTPUT_DIRECTORY={}",
-            lib_dir.display()
-        ));
-        self.args.push(format!(
-            "-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={}",
-            lib_dir.display()
+            "-DCMAKE_INSTALL_PREFIX={}",
+            out_dir.display()
         ));
         if !self.profile.is_empty() {
             self.args
@@ -152,21 +143,29 @@ impl Config {
 
         // build
         let mut cmd = Command::new("cmake");
-        let args = [
-            "--build".to_string(),
-            bin_dir.display().to_string(),
-            "--parallel".to_string(),
-            "--config".to_string(),
-            self.profile.clone(),
-        ]
-        .to_vec();
-        cmd.args(&args);
+        cmd.args([
+            "--build",
+            &bin_dir.display().to_string(),
+            "--parallel",
+            "--config",
+            &self.profile,
+        ]);
+        // println!("cargo:warning={:?} {:?}", cmd.get_program(), cmd.get_args());
+        cmd.status()?;
+
+        let mut cmd = Command::new("cmake");
+        cmd.args(["--install", &bin_dir.display().to_string()]);
         // println!("cargo:warning={:?} {:?}", cmd.get_program(), cmd.get_args());
         cmd.status()?;
 
         // help finding libs
-        println!("cargo:rustc-link-search={}", lib_dir.display());
-        Ok(lib_dir)
+        println!("cargo:rustc-link-search={}", out_dir.display());
+        println!("cargo:rustc-link-search={}", out_dir.join("lib").display());
+        if host.contains("msvc") {
+            println!("cargo:rustc-link-search={}", out_dir.join(&self.profile).display());
+            println!("cargo:rustc-link-search={}", out_dir.join("lib").join(&self.profile).display());
+        }
+        Ok(out_dir)
     }
 
     pub fn build(&mut self) -> PathBuf {
