@@ -1,6 +1,7 @@
 fn main() {
     let target = std::env::var("TARGET").unwrap();
     let mut cfg = cmk::Config::new("cpplib");
+    cfg.profile("Release");
     if target.contains("emscripten") {
         if let Ok(emsdk) = std::env::var("EMSDK") {
             cfg.define(

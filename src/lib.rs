@@ -121,14 +121,9 @@ impl Config {
         let mut cmd = Command::new("cmake");
         self.args.push(format!("-S{}", self.path.display()));
         self.args.push(format!("-B{}", bin_dir.display()));
-        self.args.push(format!(
-            "-DCMAKE_INSTALL_PREFIX={}",
-            out_dir.display()
-        ));
-        if !self.profile.is_empty() {
-            self.args
-                .push(format!("-DCMAKE_BUILD_TYPE={}", self.profile));
-        }
+        if self.profile.is_empty() { self.profile = "Debug".to_string(); }
+        self.args
+            .push(format!("-DCMAKE_BUILD_TYPE={}", &self.profile));
         if !self.cflags.is_empty() {
             env::set_var("CFLAGS", &self.cflags);
             self.args.push("-UCMAKE_C_FLAGS".to_string());
@@ -137,6 +132,10 @@ impl Config {
             env::set_var("CXXFLAGS", &self.cflags);
             self.args.push("-UCMAKE_CXX_FLAGS".to_string());
         }
+        self.args.push(format!(
+            "-DCMAKE_INSTALL_PREFIX={}",
+            out_dir.display()
+        ));
         cmd.args(&self.args);
         // println!("cargo:warning={:?} {:?}", cmd.get_program(), cmd.get_args());
         cmd.status()?;
@@ -154,7 +153,7 @@ impl Config {
         cmd.status()?;
 
         let mut cmd = Command::new("cmake");
-        cmd.args(["--install", &bin_dir.display().to_string()]);
+        cmd.args(["--install", &bin_dir.display().to_string(), "--config", &self.profile]);
         // println!("cargo:warning={:?} {:?}", cmd.get_program(), cmd.get_args());
         cmd.status()?;
 
